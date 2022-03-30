@@ -1,0 +1,324 @@
+---
+title: "Stat345 Midterm Project - Timberwolves 2021 Offensive Analysis"
+author: "Emily Mauch"
+date: "3/29/2022"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE }
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+![](Minnesota-Timberwolves-Logo-2008.jpg)
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(nbastatR)
+library(tidyverse)
+library(ggplot2)
+library(ggforce)
+library(gganimate) 
+library(av)
+library(gifski)
+library(ggExtra)
+library(cowplot)
+library(grid)
+library(lattice)
+library(rvest)
+library(gridExtra)
+library(transformr)
+library(magick)
+Sys.setenv("VROOM_CONNECTION_SIZE"=131072*2)
+```
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+#Pulling data from nbastat for the TImberwolves seasons 2000 - 2021
+Shots_2000 <- teams_shots(teams = "Timberwolves", seasons = 2000)
+Shots_2001 <- teams_shots(teams = "Timberwolves", seasons = 2001)
+Shots_2002 <- teams_shots(teams = "Timberwolves", seasons = 2002)
+Shots_2003 <- teams_shots(teams = "Timberwolves", seasons = 2003)
+Shots_2004 <- teams_shots(teams = "Timberwolves", seasons = 2004)
+Shots_2005 <- teams_shots(teams = "Timberwolves", seasons = 2005)
+Shots_2006 <- teams_shots(teams = "Timberwolves", seasons = 2006)
+Shots_2007 <- teams_shots(teams = "Timberwolves", seasons = 2007)
+Shots_2008 <- teams_shots(teams = "Timberwolves", seasons = 2008)
+Shots_2009 <- teams_shots(teams = "Timberwolves", seasons = 2009)
+Shots_2010 <- teams_shots(teams = "Timberwolves", seasons = 2010)
+Shots_2011 <- teams_shots(teams = "Timberwolves", seasons = 2011)
+Shots_2012 <- teams_shots(teams = "Timberwolves", seasons = 2012)
+Shots_2013 <- teams_shots(teams = "Timberwolves", seasons = 2013)
+Shots_2014 <- teams_shots(teams = "Timberwolves", seasons = 2014)
+Shots_2015 <- teams_shots(teams = "Timberwolves", seasons = 2015)
+Shots_2016 <- teams_shots(teams = "Timberwolves", seasons = 2016)
+Shots_2017 <- teams_shots(teams = "Timberwolves", seasons = 2017)
+Shots_2018 <- teams_shots(teams = "Timberwolves", seasons = 2018)
+Shots_2019 <- teams_shots(teams = "Timberwolves", seasons = 2019)
+Shots_2020 <- teams_shots(teams = "Timberwolves", seasons = 2020)
+Shots_2021 <- teams_shots(teams = "Timberwolves", seasons = 2021)
+```
+
+```{r, include=FALSE}
+#Complies all data into a single data frame : Shots_All
+#Inputs: All data from timberwolves 2000-2021 (provided by nba stat)
+#Output: Shots_All
+Shots_All <- rbind(Shots_2000,Shots_2001, Shots_2002, Shots_2003, Shots_2004, Shots_2005, Shots_2006, Shots_2007, Shots_2008, Shots_2009 ,Shots_2010, Shots_2011, Shots_2012, Shots_2013, Shots_2014, Shots_2015, Shots_2016, Shots_2017, Shots_2018, Shots_2019, Shots_2020, Shots_2021)
+
+#Editing Shots_All to just include season year, shot location and if the shot was made
+Shots_All <- Shots_All %>% select(yearSeason, locationX, locationY, isShotMade)
+```
+
+
+```{r, include=FALSE}
+#Producing basketball court - Making dataframes that hold the dimensions of the shapes need to be made. (separated by shape)
+#Inputs: locations and dimensions from http://savvastjortjoglou.com/nba-shot-sharts.html
+
+#Producing hoop and free throw circles
+# Output: "Circles" data frame made to produce hoop and free throw on ggplot
+thing <- c('hoop', 'free_throw')
+CenterX <- c(0, 0)
+CenterY <- c(0,142.5)
+radius <- c(7.5, 60)
+
+Circles <- data.frame(thing, CenterX, CenterY, radius)
+
+#Producing all rectangles on court
+# Output: "Rectangles" data frame made to produce innerbox, outerbox, backboard , outside of court on ggplot
+thing <- c('outerbox', 'backboard', 'innerbox', 'outside')
+Xmin <- c(-80, -30, -60, -250)
+Xmax <- c(80, 30, 60, 250)
+Ymin <- c(-47.5, -7.5, -47.5, -47.5)
+Ymax <- c(142.5, -6.5, 142.5, 422.5)
+
+Rectangles <- data.frame(thing, Xmin, Xmax, Ymin, Ymax)
+
+#Producing all arcs on court
+# Output: "Arcs" data frame made to produce half court circles and 3 point line on ggplot
+thing <- c('Big Center', 'Little Center', 'Three Point')
+Center1 <- c(0,0,0)
+Center2 <- c(422.5, 422.5, -30)
+radius <- c(60,20,280)
+start <- c(1.5708, 1.5708, 0.9)
+end <- c(4.71239, 4.71239, -0.9)
+
+Arcs <- data.frame(thing, Center1, Center2, radius, start, end)
+```
+
+
+  
+```{r, include=FALSE}
+#Making breaks to be used in scale gradient of geom hex in Big_guy plot
+my_breaks = c(50, 100, 500, 800, 1000, 1500)
+```
+
+
+
+```{r, include=FALSE}
+#Produce a geom_hex plot that shows the density of shots taken. 
+#Inputs: Shot_All, Circles, Rectangles and Arcs 
+#Output: Big_guy : animated ggplot of all 22 years of shot locations. Coloring based on density on shots taken 
+#Density is colored on log scale due to such high density in restricted region. Only half court was presented due to lack of points on opposing court size and simplicity
+
+Big_guy <- ggplot(Shots_All, aes(x=locationX, y=locationY))+ 
+geom_hex(aes(group=yearSeason))+ transition_time(yearSeason)+
+geom_segment(aes(x = -220, xend = -220, y = -47.5, yend = 142.5)) +
+geom_segment(aes(x = 220, xend = 220, y = -47.5, yend = 142.5)) +
+geom_rect(data= Rectangles, aes(xmin=Xmin, xmax=Xmax, ymin=Ymin, ymax=Ymax), alpha=0, color='black', inherit.aes = FALSE)+
+geom_circle(data = Circles, aes(x0 = CenterX, y0 = CenterY, r = radius), inherit.aes = FALSE) + 
+coord_fixed() +
+geom_arc(data= Arcs, aes(x0 = Center1, y0 = Center2, r = radius, start = start, end = end), inherit.aes = FALSE)+
+scale_x_continuous(limits=c(-250,250))+
+scale_y_continuous(limits=c(-50,423))+  
+theme_void() +
+scale_fill_gradient(name = NULL, trans= "log10", labels=NULL, low = "snow4", high = "navy", guide= NULL)
+```
+
+
+```{r, include=FALSE}
+#Producing marginal density plots to be placed on x and y axis of Big_guy to show density of made vs missed shots
+
+#Input: Shots_All
+#Output: Animated geom_density plot to show largest shot density on x axis
+g1 <- ggplot() + geom_density(data=Shots_All, aes(x=locationX, fill=isShotMade), alpha=0.5, size=.2, color= "black")+ 
+   scale_fill_manual("Shot", values = c("navy", "forestgreen")) + transition_time(yearSeason) + theme_void() + labs(title= "Shot Location and Accuracy", subtitle= "Year: {frame_time}") + theme(legend.position = "none")
+
+
+#Input: Shots_All
+#Output: Animated geom_density plot to show largest shot density on y axis
+g2 <- ggplot() + geom_density(data=Shots_All, aes(x=locationY, fill= isShotMade), alpha=0.3, size=.5, color="black") +
+  scale_fill_manual("Shot", labels= c("Missed", "Made"), values = c("navy", "forestgreen"))+
+  coord_flip() + transition_time(yearSeason) + theme_void() + scale_x_continuous(limits=c(-50,423))
+```
+
+
+
+
+```{r, include=FALSE}
+#Producing animated images to correct size, duration and number of frames so they can be put together
+a_gif <- animate(g1, width =240, height = 100, nframes=22, duration = 15)
+b_gif <- animate(g2, width = 100, height = 240, nframes=22, duration = 15)
+c_gif <- animate(Big_guy, width = 240, height = 240, nframes=22, duration = 15)
+#Produces 22 separate images for each animation 
+a_mgif <- image_read(a_gif)
+b_mgif <- image_read(b_gif)
+c_mgif <- image_read(c_gif)
+```
+
+
+
+```{r, echo=FALSE, fig.height=8, fig.width=8, fig.align='center'}
+#Producing a gif of all 3 separate animation together 
+#Inputs: Separate images of hex density graph and marginal density plots (22 per plot)
+#Outputs: new_gif : animated geom hex and ggmarinal plots to show where the most shots are taken and where the most shots are made
+new_gif <- horizontal <- image_append(c(c_mgif[1], b_mgif[1]))
+  All <- image_append(c(a_mgif[1], horizontal), stack=TRUE)
+   All_s <- image_scale(All, geometry = c("400", "x800"))
+  new_gif <- All_s
+for(i in 1:22){
+  horizontal <- image_append(c(c_mgif[i], b_mgif[i]))
+  All <- image_append(c(a_mgif[i], horizontal), stack=TRUE)
+  All_s <- image_scale(All, geometry = c("400", "x800"))
+  new_gif <- c(new_gif, All_s)
+}
+
+new_gif
+```
+Visualization of Timberwolves Shots taken Seasons 2000-2021
+
+- Shot locations have condensed to top of key and restricted area as time increases
+- Majority of shots are being taken in the restricted area 
+- Majority of shots made are being taken from the restricted area and top of the key 
+- Percentage of shots made has increased from 2000 - 2021
+  - Peak in 2008-2010
+  - Steadily increasing from 2011 - 2021
+
+```{r, include=FALSE}
+#Additional Work
+#Data scraped from online source that shows wins and loses for the Timberwolves 2021 season 
+#Input: Table from "landofbasketball.com"
+#Output: Data frame: WandL
+url <- "https://www.landofbasketball.com/results_by_team/2020_2021_timberwolves.htm"
+h <- read_html(url)
+nodes <- h %>% html_nodes("table")
+WandL <- nodes %>% html_table(header=TRUE) %>% .[[1]]
+
+#Renaming Wins / loses column (End_Score) and final score column (Final_Score)
+colnames(WandL)[[6]] <- ("End_Score")
+colnames(WandL)[[7]] <- ("Final_Score")
+
+#Selecting Date, End_Score and Final_Score and removing spaces from original table 
+WandL <- WandL %>% select(Date, End_Score, Final_Score)
+WandL <- WandL[-c(31, 62, 75),] 
+
+#Mutating data format to numerical year, month, date in separate columns so it can combine with Shots_2021
+WandL <- WandL %>% mutate(GameDate = as.Date(Date, format = "%b %d, %Y")) %>% separate(GameDate, c("Year","Month", "Day"), sep="-") %>% separate(Final_Score, c("Timberwolves", "Opponent"), sep="-")%>% separate(Timberwolves, c("Timberwolves", NA), sep=" ") %>% separate(Opponent, c(NA, "Opponent"), sep=" ")
+WandL <- WandL %>% select("Year","Month", "Day", "End_Score", "Timberwolves", "Opponent") 
+WandL <- transform(WandL, Opponent = as.numeric(Opponent), Timberwolves = as.numeric(Timberwolves))
+```
+
+```{r, include=FALSE}
+#Mutating data format to numerical year, month, date in separate columns so it can combine with WandL
+Shots2021 <- mutate(Shots_2021, GameDate = as.Date(Shots_2021$dateGame, format = "%Y%m%d"))
+Shots2021 <- Shots2021 %>% select(typeEvent, typeAction, typeShot, numberPeriod, minutesRemaining, nameZone, locationX, locationY, distanceShot, GameDate, idGame)
+Shots2021 <- separate(Shots2021, GameDate, c("Year","Month", "Day"), sep="-")
+
+#Joining Shots2021 and WandL -> shot data and ending result and score date per game
+Shots_WL <- right_join(Shots2021, WandL, by= c("Year","Month", "Day"))
+```
+
+```{r, include=FALSE}
+#Finding  averages/counts for analysis purposes. Used to produce data frame in next step 
+Shots_WL %>% group_by(End_Score) %>% count(typeEvent)
+WandL %>% count(End_Score)
+WandL %>% group_by(End_Score) %>% summarise_at(vars(Timberwolves), list(Timberwolves = mean))
+WandL %>% group_by(End_Score) %>% summarise_at(vars(Opponent), list(Opponent = mean))
+```
+
+```{r, include=FALSE}
+#Making data frame to analyze shooting percentages 
+#Input: Counts from analysis above
+#Output: Data frame: Counts
+End_Result <- c('Lose', 'Lose', 'Win' ,'Win')
+Number <- c(49, 49, 23, 23)
+Shot_Was <- c('Made', 'Missed')
+Shots <- c(1968, 2509, 964, 1105)
+Percent <- c('44%', '56%', '47%', '53%')
+Percent_Pos <- c(.8675, .3525)
+
+Counts <- data.frame(End_Result, Number, Shot_Was, Shots, Percent, Percent_Pos)
+
+#Making data frame to analyze ending scores
+#Input: Counts from analysis above
+#Output: Data frame: MM
+End_Results <- c('Win' ,'Win', 'Lose', 'Lose')
+Teams <- c('Timberwolves', 'Opponent')
+Score <- c(116.2609, 106.9130, 110.1837, 122.7347)
+
+MM <- data.frame (End_Results, Teams, Score)
+MM$Teams <- factor(MM$Teams, levels = Teams)
+MM$End_Results <- factor(MM$End_Results, levels = c('Win', 'Lose'))
+```
+
+
+
+```{r echo=FALSE, fig.height=8, fig.width=8, fig.align='center'}
+#Producing stacked bar graph p1
+#Input: Counts and separated by end result
+#Output: p1, stacked bar graph showing variation in shooting percentage when the end result is a win vs lose
+
+p1 <- ggplot(Counts, aes(x=End_Result, y=Shots, fill=Shot_Was)) + 
+  geom_bar(position="fill", stat="identity") +
+labs(x = " ", y = "Shooting Percent", subtitle ="Shooting Percentage", title = "2021 Season Averages" )+
+  scale_fill_manual("Shot ", values = c("Made" = "navy", "Missed" = "forestgreen")) + 
+scale_x_discrete(labels=c("Timberwolves Win", "Timberwolves Lose"))+
+  geom_text(aes(label = Percent, y=Percent_Pos), vjust = 1.5, colour = "white", size=5)+
+  theme_classic() + theme(text = element_text(size = 20))
+
+#Producing stacked bar graph p2
+#Input: MM and separated by team and end result
+#Output: p1, group bar graph showing variation in ending score in wins vs loses
+p2 <- ggplot(MM, aes(x= End_Results, y=Score, fill=Teams)) + 
+  geom_bar(position="dodge", stat="identity") +
+  scale_fill_manual("Team", values = c("Timberwolves" = "navy", "Opponent" = "snow4")) +
+   geom_text(aes(label = round(Score, 0)), position = position_dodge(0.9), color="white", vjust=1.5, size = 5) +
+  labs(x = " ", y = "Final Score",
+ subtitle ="Final Scores") +
+scale_x_discrete(labels=c("Timberwolves Win", "Timberwolves Lose"))+
+  theme_classic() + theme(text = element_text(size = 20))
+
+#Placing graphs together to make the layout look better
+grid.arrange(p1, p2, heights= c(3,3))
+```
+Visualization of Timberwolves offensive statistics  
+
+- Shooting percentages are highly similar when the Timberwolves both win and lose 
+- Little variation in points scored in both outcomes
+- A variation is seen between the opponent's score in both outcomes 
+  - Timberwolves win : Opponent's average score - 107
+  - Timberwolves lose : Opponent's average score - 123
+- This suggests the defense is going to depict the end score 
+
+
+\newpage
+
+
+
+For those it interests:
+
+
+Shot Location Graph
+
+The data for the density plots was provided by the nbastats package in R. Data used included season year, shot location (provided by X and Y coordinates) and if the shot was made. The density of shot location was colored on a log scale due to high density in restricted region when compared to the rest of the court. Only half court was presented due to lack of points on opposing court side and simplicity. Marginal density plots show shots made (green) and missed (blue) over time. Plot animations vary by year in coordination with one another.
+
+Generally, shot accuracy increased from 2000 to 2021, excluding a high peak seen from 2008 to 2010. In 2000, shots were taken from a general overlay of many locations, but it condenses to the lane and 3 point line as time increases. In all years, most shots were taken and made in the restricted region within 8 feet of the basket.
+
+
+2021 Season Average
+
+Additional ending score data was retrieved from landofbasketball.com and linked to nbastat data. Analysis of shooting percentages, total shots taken and end score separated by ending score result (win or lose) were analyzed. This analysis led to the conclusion that the offensive statistics don’t vary greatly between wins and losses. The average score of the Timberwolves being 113±4 while the opponent’s average score is 115±12. The greater standard deviation within the opponents scoring habits indicate defensive statistic should be analyzed for possible relationships to game losses.
+
